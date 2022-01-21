@@ -1,0 +1,240 @@
+---
+title: "Peptalk San Diego"
+author: "Matias Gutierrez"
+date: "December 19, 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+First, we will install all required libraries
+
+```{r}
+install.packages("data.table")
+install.packages("tidyverse")
+install.packages("FactoMineR")
+install.packages("factoextra")
+install.packages("basetheme")
+install.packages("ape")
+install.packages("Biostrings")
+install.packages("msa")
+```
+
+
+Next we will load all required libraries
+
+```{r}
+library(data.table)
+library(tidyverse)
+library(FactoMineR)
+library(factoextra)
+library(basetheme)
+library(ape)
+library(Biostrings)
+library(msa)
+
+```
+
+
+The following projects are a continuation from the NGS processing steps.
+
+**Project 1: Repertoire metrics**
+
+-Data processed from Brandon J. DeKosky, Oana I. Lungu, Daechan Park, Erik L. Johnson, Wissam Charab, Constantine Chrysostomou, Daisuke Kuroda, Andrew D. Ellington, Gregory C. Ippolito, Jeffrey J. Gray, George Georgiou
+Proceedings of the National Academy of Sciences May 2016, 113 (19) E2636-E2645; DOI: 10.1073/pnas.1525510113
+
+-Processing steps:
+  1. Merge reads using flash
+  2. Get high-quality reads using fastx-toolkit
+  3. Annotate reads using IgBlast
+  4. Get clonotypes using Change-O 
+  5. Aggregate clonotypes and export
+
+`ls | grep _2 | sed 's/_2.fastq_head//' | awk '{print "flash -r 250 -f 440 -s 100 -c " $1 "_1.fastq_head " $1 "_2.fastq_head  > " $1 "_linked.fq" }'`
+`ls | grep _2 | sed 's/_2.fastq_head//' | awk '{print "flash -r 250 -f 440 -s 100 -c " $1 "_1.fastq_head " $1 "_2.fastq_head  > " $1 "_linked.fq" }' | bash`
+
+`ls | grep linked | sed 's/.fq//' |  awk '{print "fastq_quality_filter -Q33 -q 30 -p 50 -i " $1 ".fq -o " $1 "_q30p50.fq"}'`
+`ls | grep linked | sed 's/.fq//' |  awk '{print "fastq_quality_filter -Q33 -q 30 -p 50 -i " $1 ".fq -o " $1 "_q30p50.fq"}' | bash`
+
+`ls | grep linked | grep q30p50.fq | awk '{print $1 " " $1}' | sed 's/fq/fna/' | awk '{print "fastq_to_fasta -Q33 -n -i " $2 " -o " $1}'`
+`ls | grep linked | grep q30p50.fq | awk '{print $1 " " $1}' | sed 's/fq/fna/' | awk '{print "fastq_to_fasta -Q33 -n -i " $2 " -o " $1}' | bash`
+
+`ls | grep fna | awk '{print "igblastn -germline_db_V /home/matias/igblast1.17.1/database/Vgene -germline_db_D /home/matias/igblast1.17.1/database/Dgene -germline_db_J /home/matias/igblast1.17.1/database/Jgene  -outfmt 19 -auxiliary_data /home/matias/igblast1.17.1/optional_file/human_gl.aux -query "$1 " > "$1"_igblast"}'`
+`igblastn -germline_db_V /home/matias/igblast1.17.1/database/Vgene -germline_db_D /home/matias/igblast1.17.1/database/Dgene -germline_db_J /home/matias/igblast1.17.1/database/Jgene  -outfmt 19 -auxiliary_data /home/matias/igblast1.17.1/optional_file/human_gl.aux -query SRR3273593_linked_q30p50.fna > SRR3273593_linked_q30p50.fna_igblast`
+`igblastn -germline_db_V /home/matias/igblast1.17.1/database/Vgene -germline_db_D /home/matias/igblast1.17.1/database/Dgene -germline_db_J /home/matias/igblast1.17.1/database/Jgene  -outfmt 19 -auxiliary_data /home/matias/igblast1.17.1/optional_file/human_gl.aux -query SRR3273595_linked_q30p50.fna > SRR3273595_linked_q30p50.fna_igblast`
+`igblastn -germline_db_V /home/matias/igblast1.17.1/database/Vgene -germline_db_D /home/matias/igblast1.17.1/database/Dgene -germline_db_J /home/matias/igblast1.17.1/database/Jgene  -outfmt 19 -auxiliary_data /home/matias/igblast1.17.1/optional_file/human_gl.aux -query SRR3273597_linked_q30p50.fna > SRR3273597_linked_q30p50.fna_igblast`
+`igblastn -germline_db_V /home/matias/igblast1.17.1/database/Vgene -germline_db_D /home/matias/igblast1.17.1/database/Dgene -germline_db_J /home/matias/igblast1.17.1/database/Jgene  -outfmt 19 -auxiliary_data /home/matias/igblast1.17.1/optional_file/human_gl.aux -query SRR3273598_linked_q30p50.fna > SRR3273598_linked_q30p50.fna_igblast`
+
+We will skip this step, but clone assignment was done using changeo:
+
+`ls | grep igblast | awk '{print "DefineClones.py -d " $1" --act set --model ham --norm len --dist 0.15 "}'  | bash`
+
+First, we will load our bulk results using `fread()`
+```{r}
+
+d1_naive <- fread("D:/peptalk/Project1/SRR3273593_igblast_parsed.tsv")
+d2_naive <- fread("D:/peptalk/Project1/SRR3273595_igblast_parsed.tsv")
+
+d1_Agexp <- fread("D:/peptalk/Project1/SRR3273597_igblast_parsed.tsv")
+d2_Agexp <- fread("D:/peptalk/Project1/SRR3273598_igblast_parsed.tsv")
+```
+
+Next, we will label each object and merge them. We will remove allele information and remove clones with only one read.
+After this, we will plot V-gene usage for each sample
+
+```{r}
+
+merged_data <- rbind(d1_naive %>% mutate(donor = "d1", sample = "naive"), 
+                     d2_naive %>% mutate(donor = "d2", sample = "naive"), 
+                     d1_Agexp %>% mutate(donor = "d1", sample = "AgExp"), 
+                     d2_Agexp %>% mutate(donor = "d2", sample = "AgExp"))
+merged_data <- merged_data %>% mutate(v_call = str_replace(v_call, "\\*.*", "")) %>% filter(clone_count > 1)
+merged_data %>% group_by(donor, sample, v_call) %>% tally() %>% ggplot(., aes(x = v_call, y = n,fill = interaction(sample, donor))) + geom_col(position = "dodge") + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+This looks great, but we are comparing samples with different clone numbers. Using a simple transformation, we can plot the relative V-gene usage and get a better idea of how V-gene usage differs between donors and B cells.
+```{r}
+merged_data %>% group_by(sample, donor, v_call) %>% tally() %>% mutate(freq = prop.table(n)) %>% ggplot(., aes(x = v_call, y = freq, fill = interaction(sample, donor))) + geom_col( position = "dodge") + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+If you look carefully, you will seee there are some differences between donors and B cells. However, it's very hard to make assumtions by just looking at this data. We will use a dimension reduction technique to collapse this data into only two dimensions.
+First, we will get V-gene frequencies by sample, as before, and then we will transform each V-gene into a column, using `pivot_wider()`. Note that we fill missing V-genes in some samples with 0.
+Next, we will perform a Principal Component Analysis (PCA) on this dataset 
+```{r}
+merged_wider <- merged_data %>% group_by(sample, donor, v_call) %>% tally() %>% mutate(freq = prop.table(n)) %>% pivot_wider(names_from = "v_call", values_from = "freq", id_cols = c("sample", "donor")) %>% replace(is.na(.), 0 )
+res.PCA <- PCA(merged_wider[3:63], graph = F, scale.unit = F) #Omit sample and donor cols
+```
+
+There are different ways to visualize the output of a PCA. Here we will plot directly the results, and also perform a agglomerative hierarchical clustering of the data
+```{r}
+
+fviz_pca_ind(res.PCA)
+fviz_dend(HCPC(res.PCA, graph = F))
+```
+
+Note that samples 1 and 2 cluster toghether. These are the Ag-Exp B cells from donors 1 and 2. You can check this by calling the `merged_wider` object. 
+
+Finally, we will compare CDR-H3 lenghts among naive and antigen-experienced datasets. Previous to this study, there was some evidence that antigen-experienced antibodies showed shorter CDR-H3s. Let's see if that's the case. We will plot the CDR-H3 lenght distributions and we will perform t-test.
+
+```{r}
+
+merged_data %>% mutate(cdr3_len= nchar(cdr3_aa)) %>% group_by(sample, cdr3_len) %>% tally() %>% mutate(freq = prop.table(n)) %>% ggplot(., aes(x = cdr3_len, y = freq, fill = sample)) + geom_col(position = "dodge")
+
+
+naive_len <- merged_data %>% mutate(cdr3_len = nchar(cdr3_aa))  %>% filter(grepl("naive", sample)) %>% pull(cdr3_len)
+agexp_len <- merged_data %>% mutate(cdr3_len = nchar(cdr3_aa))  %>% filter(grepl("Ag", sample)) %>% pull(cdr3_len)
+t.test(naive_len, agexp_len )
+```
+
+
+**Project 2: Discover of HIV bnAs from NGS data**
+
+-Data processed from Krebs et al., 2019, Immunity50, 677–691 March 19, 2019.https://doi.org/10.1016/j.immuni.2019.02.008
+
+-Processing steps:
+  1. Annotation, quality control, and clonotype assingment using mixcr.
+  
+`mixcr analyze amplicon  -s hs --receptor-type igh --starting-material rna --3-end c-primers --5-end no-v-primers --adapters no-adapters --assemble "-O separateByV=TRUE -O separateByJ=TRUE" $1 $2 $3`
+  
+Load the data using `fread`
+```{r}
+
+day154 <- fread("D:/peptalk/Project2/SRR8235274_mixcr.clonotypes.IGH.txt")
+day240 <- fread("D:/peptalk/Project2/SRR8235278_mixcr.clonotypes.IGH.txt")
+day485 <- fread("D:/peptalk/Project2/SRR8235297_mixcr.clonotypes.IGH.txt")
+day646 <- fread("D:/peptalk/Project2/SRR8235300_mixcr.clonotypes.IGH.txt")
+```
+
+Get clonotypes that match the signature and merge. This works by using the `grepl()` function. Remember that you can check what a function does by `?function`. For the second `grepl()` call, we are using a regular expression. We will also remove clones with only 1 read
+
+```{r}
+
+sign154 <- day154 %>% filter(grepl("IGHV1-69", allVHitsWithScore)) %>% filter(grepl("CARE.{1,}GW.{1,}.{1,}KP.{1}GA", aaSeqCDR3), cloneCount >1) %>% mutate(day = 154)
+sign240 <- day240 %>% filter(grepl("IGHV1-69", allVHitsWithScore)) %>% filter(grepl("CARE.{1,}GW.{1,}.{1,}KP.{1}GA", aaSeqCDR3), cloneCount >1) %>% mutate(day = 240)
+sign485 <- day485 %>% filter(grepl("IGHV1-69", allVHitsWithScore)) %>% filter(grepl("CARE.{1,}GW.{1,}.{1,}KP.{1}GA", aaSeqCDR3), cloneCount >1) %>% mutate(day = 485)
+sign646 <- day646 %>% filter(grepl("IGHV1-69", allVHitsWithScore)) %>% filter(grepl("CARE.{1,}GW.{1,}.{1,}KP.{1}GA", aaSeqCDR3), cloneCount >1) %>% mutate(day = 646)
+
+seq_hits <- rbind(sign154, sign240, sign485, sign646) %>% filter(cloneCount > 1, nchar(aaSeqCDR3) == 19)
+seq_hits %>% head()
+```
+
+Check each `sign` object. How many hits we have?
+Note that we filter sequences with a lenght equal to 19. This is because the following step requires sequences with same lenght
+
+```{r}
+
+dna <- DNAStringSet(seq_hits$nSeqCDR3) #Transform sequences into DNAStringSet object
+metadata(dna) <- list(seq_hits$day) #Add day 
+D <- dist.dna(as.DNAbin(dna)) #Calculate distances
+tr <- nj(D) #Get tree
+plot(tr, show.tip=FALSE)
+title("Unrooted NJ tree of VRC42 lineage")
+tiplabels(c(dna@metadata[[1]]), bg=num2col(c(dna@metadata[[1]])), cex=.5) 
+```
+
+
+**Project 3. Discovery of anti-EBOV antibodies from yeast display data**
+
+-Data processed from Wang, B., DeKosky, B., Timm, M. et al. Functional interrogation and mining of natively paired human VH:VL antibody repertoires. Nat Biotechnol 36, 152–155 (2018). https://doi.org/10.1038/nbt.4052
+
+-Processing steps:
+  1. Annotation, quality control, and clonotype assingment using mixcr.
+  
+`mixcr analyze amplicon  -s hs --receptor-type igh --starting-material rna --3-end c-primers --5-end v-primers --adapters no-adapters  $1 $2 $3`
+
+Load the data using `fread()`
+```{r}
+
+pre_sort <- fread("D:/peptalk/Project3/SRR6336500.clonotypes.IGH.txt")
+post_sort <- fread("D:/peptalk/Project3/SRR6336502.clonotypes.IGH.txt") ##3rd sort
+
+```
+
+We need to match clones in the pre_sort to clones found in the post_sort. For this we will use the `inner_join()` function. First, we will remove clones with only one read
+```{r}
+pre_sort <- pre_sort %>% filter(cloneCount > 1)
+post_sort <- post_sort %>% filter(cloneCount > 1)
+
+matches <- inner_join(pre_sort, post_sort, by = "aaSeqCDR3", suffix = c("_pre", "_post"))
+matches %>% head()
+```
+
+This only gives us matches between the two datasets. We need to know which clones were enriched from pre_sort to post_sort. We will get this information by calculation the ratio between clone frequencies en each dataset,and filter enriched (ratio > 10) clones
+
+```{r}
+matches_clean <- matches %>% mutate(ratio = cloneFraction_post/cloneFraction_pre) %>% filter(ratio > 10)
+```
+
+We can get can sort by ratio, to see the most enriched clones
+
+```{r}
+matches_clean %>% arrange(desc(ratio)) %>% head(5)
+```
+
+We can also plot the ratio distribution. If we do the same with the original data, we will see clones that were selected against in the yeast display library
+
+```{r}
+
+matches_clean %>% arrange(desc(ratio)) %>% ggplot(., aes(x= reorder(row.names(.), -ratio), y = ratio)) + geom_col() + scale_y_log10()
+
+matches %>% mutate(ratio = cloneFraction_post/cloneFraction_pre) %>% arrange(desc(ratio)) %>% ggplot(., aes(x= reorder(row.names(.), -ratio), y = ratio)) + geom_col() + scale_y_log10()
+
+```
+
+We can corroborate that the enriched clones are actually EBOV binders. Using data from Wang, B., DeKosky, B., Timm, M. et al, we can check this.
+
+```{r}
+
+bind_data <- fread("D:/peptalk/Project3/bind_data.txt")
+matches_bind <- inner_join(matches_clean, bind_data, by = c("aaSeqCDR3" = "CDRH3"))
+matches_bind %>% head()
+```
+
+Lets compare ratio vs affinity. We will get rid of duplicates
+
+```{r}
+matches_bind %>% group_by(aaSeqCDR3) %>% summarize(ratio_mean = mean(ratio), aff = `Fab affinity`[1])  %>% ggplot(., aes(x = ratio_mean, y = aff)) + geom_point() + scale_y_log10() + scale_x_log10()
+```
+
